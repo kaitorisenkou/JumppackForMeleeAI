@@ -22,15 +22,18 @@ namespace JumppackForMeleeAI {
             if (!pawn.RaceProps.Humanlike || pawn.IsColonist) {
                 return null;
             }
-            Thing enemyTarget = pawn.mindState.enemyTarget;
-            if (enemyTarget == null) {
+
+            List<IAttackTarget> enemyTargets = pawn.Map.attackTargetsCache.GetPotentialTargetsFor(pawn);
+            IAttackTarget firstTarget = enemyTargets.First(t => t.Thing is Pawn);
+            if (enemyTargets.NullOrEmpty() || firstTarget != null) {
                 if (DebugSettings.godMode) {
                     MoteMaker.ThrowText(pawn.DrawPosHeld ?? pawn.PositionHeld.ToVector3Shifted(), pawn.MapHeld,
                         "[jumppack]no target");
                 }
                 return null;
             }
-            Verb attackVerb = pawn.TryGetAttackVerb(enemyTarget, !pawn.IsColonist, true);
+            Pawn targetPawn = firstTarget as Pawn;
+            Verb attackVerb = pawn.TryGetAttackVerb(enemyTargets.First().Thing, false, true);
             if (attackVerb == null || !attackVerb.verbProps.IsMeleeAttack) {
                 if (DebugSettings.godMode) {
                     MoteMaker.ThrowText(pawn.DrawPosHeld ?? pawn.PositionHeld.ToVector3Shifted(), pawn.MapHeld,
@@ -38,22 +41,23 @@ namespace JumppackForMeleeAI {
                 }
                 return null;
             }
-            if (pawn.CanReachImmediate(enemyTarget, PathEndMode.Touch)) {
+            if (pawn.CanReachImmediate(targetPawn, PathEndMode.Touch)) {
                 if (DebugSettings.godMode) {
                     MoteMaker.ThrowText(pawn.DrawPosHeld ?? pawn.PositionHeld.ToVector3Shifted(), pawn.MapHeld,
                         "[jumppack]reached, not required");
                 }
                 return null;
             }
-            if ((float)(pawn.Position - enemyTarget.Position).LengthHorizontalSquared < minTargetDistance) {
+
+            if ((float)(pawn.Position - targetPawn.Position).LengthHorizontalSquared < minTargetDistance) {
                 if (DebugSettings.godMode) {
                     MoteMaker.ThrowText(pawn.DrawPosHeld ?? pawn.PositionHeld.ToVector3Shifted(), pawn.MapHeld,
-                        "[jumppack]too close (distance:" + (float)(pawn.Position - enemyTarget.Position).LengthHorizontalSquared + ")");
+                        "[jumppack]too close (distance:" + (float)(pawn.Position - targetPawn.Position).LengthHorizontalSquared + ")");
                 }
                 return null;
             }
             
-            if((enemyTarget is Pawn && ((Pawn)enemyTarget).pather.Moving)) {
+            if(targetPawn.pather.Moving) {
                 if (DebugSettings.godMode) {
                     MoteMaker.ThrowText(pawn.DrawPosHeld ?? pawn.PositionHeld.ToVector3Shifted(), pawn.MapHeld,
                         "[jumppack]target is moving");
@@ -61,7 +65,7 @@ namespace JumppackForMeleeAI {
                 return null;
             }
             
-            Verb jumpVerb = TryGetJumpVerb(pawn, enemyTarget);
+            Verb jumpVerb = TryGetJumpVerb(pawn, targetPawn);
             if (jumpVerb == null) {
                 if (DebugSettings.godMode) {
                     MoteMaker.ThrowText(pawn.DrawPosHeld ?? pawn.PositionHeld.ToVector3Shifted(), pawn.MapHeld,
@@ -70,9 +74,11 @@ namespace JumppackForMeleeAI {
                 return null;
             }
 
-            MoteMaker.ThrowText(pawn.DrawPosHeld ?? pawn.PositionHeld.ToVector3Shifted(), pawn.MapHeld,
-                        "[jumppack]distance: " + (float)(pawn.Position - enemyTarget.Position).LengthHorizontalSquared);
-            Job job = JobMaker.MakeJob(JumpJobDefOf.CastJumpOnce, enemyTarget);
+            if (DebugSettings.godMode) {
+                MoteMaker.ThrowText(pawn.DrawPosHeld ?? pawn.PositionHeld.ToVector3Shifted(), pawn.MapHeld,
+                        "[jumppack]distance: " + (float)(pawn.Position - targetPawn.Position).LengthHorizontalSquared);
+            }
+            Job job = JobMaker.MakeJob(JumpJobDefOf.CastJumpOnce, targetPawn);
             job.verbToUse = jumpVerb;
             return job;
         }
