@@ -23,17 +23,18 @@ namespace JumppackForMeleeAI {
                 return null;
             }
 
-            List<IAttackTarget> enemyTargets = pawn.Map.attackTargetsCache.GetPotentialTargetsFor(pawn);
-            IAttackTarget firstTarget = enemyTargets.First(t => t.Thing is Pawn);
-            if (enemyTargets.NullOrEmpty() || firstTarget != null) {
+            Thing targetPawn = pawn.mindState.enemyTarget;
+            //List<IAttackTarget> enemyTargets = pawn.Map.attackTargetsCache.GetPotentialTargetsFor(pawn);
+            //IAttackTarget firstTarget = enemyTargets.First(t => t.Thing is Pawn);
+            if (/*enemyTargets.NullOrEmpty() || firstTarget != null*/targetPawn==null) {
                 if (DebugSettings.godMode) {
                     MoteMaker.ThrowText(pawn.DrawPosHeld ?? pawn.PositionHeld.ToVector3Shifted(), pawn.MapHeld,
                         "[jumppack]no target");
                 }
                 return null;
             }
-            Pawn targetPawn = firstTarget as Pawn;
-            Verb attackVerb = pawn.TryGetAttackVerb(enemyTargets.First().Thing, false, true);
+            //Pawn targetPawn = firstTarget as Pawn;
+            Verb attackVerb = pawn.TryGetAttackVerb(targetPawn, false, true);
             if (attackVerb == null || !attackVerb.verbProps.IsMeleeAttack) {
                 if (DebugSettings.godMode) {
                     MoteMaker.ThrowText(pawn.DrawPosHeld ?? pawn.PositionHeld.ToVector3Shifted(), pawn.MapHeld,
@@ -56,15 +57,15 @@ namespace JumppackForMeleeAI {
                 }
                 return null;
             }
-            
-            if(targetPawn.pather.Moving) {
+            /*
+            if (targetPawn is Pawn && ((Pawn)targetPawn).pather.Moving) {
                 if (DebugSettings.godMode) {
                     MoteMaker.ThrowText(pawn.DrawPosHeld ?? pawn.PositionHeld.ToVector3Shifted(), pawn.MapHeld,
                         "[jumppack]target is moving");
                 }
                 return null;
             }
-            
+            */
             Verb jumpVerb = TryGetJumpVerb(pawn, targetPawn);
             if (jumpVerb == null) {
                 if (DebugSettings.godMode) {

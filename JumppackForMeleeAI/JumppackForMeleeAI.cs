@@ -18,13 +18,13 @@ namespace JumppackForMeleeAI {
     [StaticConstructorOnStartup]
     public class JumppackForMeleeAI {
         static JumppackForMeleeAI() {
-            /*
+            
             Log.Message("[JumppackForMeleeAI]Now Active");
             var harmony = new Harmony("kaitorisenkou.JumppackForMeleeAI");
-            ManualPatch(harmony);
-            //harmony.PatchAll(Assembly.GetExecutingAssembly());
+            //ManualPatch(harmony);
+            harmony.PatchAll(Assembly.GetExecutingAssembly());
             Log.Message("[JumppackForMeleeAI]Harmony patch complete!");
-            */
+            
         }
         /*
         static void ManualPatch(Harmony harmony) {
@@ -40,63 +40,101 @@ namespace JumppackForMeleeAI {
         }
         */
     }
-    /*
-    public static class FollowAndMeleeAttack_Patch {
+    [HarmonyPatch(typeof(JobGiver_AIFightEnemy), "TryGiveJob")]
+    public static class Patch_JobGiver_AIFightEnemy {
         public static int patchCount = 0;
         [HarmonyTranspiler]
         static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator) {
             var instructionList = instructions.ToList();
-            FieldInfo fieldInfo = AccessTools.Field(typeof(Pawn_PathFollower), "get_Destination");
+            MethodInfo methodInfo = AccessTools.Method(typeof(VerbProperties),"get_IsMeleeAttack");
             for (int i = 0; i < instructionList.Count; i++) {
-                if (instructionList[i].opcode == OpCodes.Callvirt && (MethodInfo)instructionList[i].operand == fieldInfo) {
+                if (instructionList[i].opcode == OpCodes.Callvirt && (MethodInfo)instructionList[i].operand == methodInfo) {
                     Label label = generator.DefineLabel();
-                    instructionList[i -3].labels.Add(label);
-                    instructionList.InsertRange(i -3, new CodeInstruction[] {
-                        new CodeInstruction(OpCodes.Ldloc_0),
-                        new CodeInstruction(OpCodes.Ldloc_S,instructionList[i-2].operand),
-                        new CodeInstruction(OpCodes.Call,AccessTools.Method(typeof(FollowAndMeleeAttack_Patch),nameof(GetJunpPack))),
+                    instructionList.InsertRange(i +2, new CodeInstruction[] {
+                        new CodeInstruction(OpCodes.Ldarg_1),
+                        new CodeInstruction(OpCodes.Call,AccessTools.Method(typeof(Patch_JobGiver_AIFightEnemy),nameof(GetJunpPack))),
+                        new CodeInstruction(OpCodes.Dup),
                         new CodeInstruction(OpCodes.Brfalse_S,label),
-                        new CodeInstruction(OpCodes.Ret)
+                        new CodeInstruction(OpCodes.Ret),
+                        new CodeInstruction(OpCodes.Pop)
                     });
+                    instructionList[i + 7].labels.Add(label);
+                    patchCount++;
                     break;
                 }
             }
             return instructionList;
         }
 
-        public static bool GetJunpPack(Pawn actor, LocalTargetInfo target) {
-            Log.Message("[JfMA]GetJunpPack");
-            if (actor.CanReachImmediate(target, PathEndMode.Touch) || actor.IsColonistPlayerControlled) {
-                Log.Message("[JfMA]reached or player");
-                return false;
+        public static Job GetJunpPack(Pawn pawn) {
+            if (!pawn.RaceProps.Humanlike || pawn.IsColonist) {
+                return null;
             }
 
-            IEnumerable<Verb> jumpVerbs = 
-                actor.VerbTracker.AllVerbs
-                .Concat(actor.equipment.AllEquipmentVerbs)
-                .Concat(actor.apparel.AllApparelVerbs)
+            Thing targetPawn = pawn.mindState.enemyTarget;
+            if (pawn.CanReachImmediate(targetPawn, PathEndMode.Touch)) {
+#if DEBUG
+                if (DebugSettings.godMode) {
+                    MoteMaker.ThrowText(pawn.DrawPosHeld ?? pawn.PositionHeld.ToVector3Shifted(), pawn.MapHeld,
+                        "[jumppack]reached, not required");
+                }
+#endif
+                return null;
+            }
+
+            if ((float)(pawn.Position - targetPawn.Position).LengthHorizontalSquared < 16) {
+#if DEBUG
+                if (DebugSettings.godMode) {
+                    MoteMaker.ThrowText(pawn.DrawPosHeld ?? pawn.PositionHeld.ToVector3Shifted(), pawn.MapHeld,
+                        "[jumppack]too close (distance:" + (float)(pawn.Position - targetPawn.Position).LengthHorizontalSquared + ")");
+                }
+#endif
+                return null;
+            }
+            /*
+            if (targetPawn is Pawn && ((Pawn)targetPawn).pather.Moving) {
+#if DEBUG
+                if (DebugSettings.godMode) {
+                    MoteMaker.ThrowText(pawn.DrawPosHeld ?? pawn.PositionHeld.ToVector3Shifted(), pawn.MapHeld,
+                        "[jumppack]target is moving");
+                }
+#endif
+                return null;
+            }
+            */
+            Verb jumpVerb = TryGetJumpVerb(pawn, targetPawn);
+            if (jumpVerb == null) {
+#if DEBUG
+                if (DebugSettings.godMode) {
+                    MoteMaker.ThrowText(pawn.DrawPosHeld ?? pawn.PositionHeld.ToVector3Shifted(), pawn.MapHeld,
+                        "[jumppack]no jump verb");
+                }
+#endif
+                return null;
+            }
+#if DEBUG
+            if (DebugSettings.godMode) {
+                MoteMaker.ThrowText(pawn.DrawPosHeld ?? pawn.PositionHeld.ToVector3Shifted(), pawn.MapHeld,
+                        "[jumppack]distance: " + (float)(pawn.Position - targetPawn.Position).LengthHorizontalSquared);
+            }
+#endif
+            Job job = JobMaker.MakeJob(JumpJobDefOf.CastJumpOnce, targetPawn);
+            job.verbToUse = jumpVerb;
+            return job;
+        }
+
+        static public Verb TryGetJumpVerb(Pawn pawn, LocalTargetInfo target) {
+            IEnumerable<Verb> jumpVerbs =
+                pawn.VerbTracker.AllVerbs
+                .Concat(pawn.equipment.AllEquipmentVerbs)
+                .Concat(pawn.apparel.AllApparelVerbs)
                 .Where(t => t is Verb_Jump);
             if (jumpVerbs.EnumerableNullOrEmpty<Verb>()) {
-                Log.Message("[JfMA]no jump verb");
-                return false;
+                return null;
             }
 
-            //Verb jumpVerb = jumpVerbs.First();
-            foreach(var jumpVerb in jumpVerbs) {
-                if (jumpVerb.ValidateTarget(target)) {
-                    Job job = JobMaker.MakeJob(JobDefOf.UseVerbOnThingStatic, target);
-                    job.verbToUse = jumpVerb;
-                    actor.jobs.TryTakeOrderedJob(job, new JobTag?(JobTag.Misc), false);
-                    Log.Message("[JfMA]return true");
-                    return true;
-                }
-            }
-            Log.Message("[JfMA]other problems");
-            return false;
-        }
-        public static bool RetTest() {
-            return false;
+            return jumpVerbs.FirstOrDefault(t => t.IsStillUsableBy(pawn) && t.CanHitTarget(target));
         }
     }
-    */
+    
 }
