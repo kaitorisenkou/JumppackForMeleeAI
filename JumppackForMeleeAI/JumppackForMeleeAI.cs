@@ -46,19 +46,40 @@ namespace JumppackForMeleeAI {
         [HarmonyTranspiler]
         static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator) {
             var instructionList = instructions.ToList();
-            MethodInfo methodInfo = AccessTools.Method(typeof(VerbProperties),"get_IsMeleeAttack");
+            MethodInfo methodInfo_IsMelee = AccessTools.Method(typeof(VerbProperties),"get_IsMeleeAttack");
+            MethodInfo methodInfo_ShootPos = AccessTools.Method(typeof(JobGiver_AIFightEnemy), "TryFindShootingPosition");
+            MethodInfo methodInfo_Makejob = AccessTools.Method(typeof(JobMaker), nameof(JobMaker.MakeJob));
             for (int i = 0; i < instructionList.Count; i++) {
-                if (instructionList[i].opcode == OpCodes.Callvirt && (MethodInfo)instructionList[i].operand == methodInfo) {
-                    Label label = generator.DefineLabel();
-                    instructionList.InsertRange(i +2, new CodeInstruction[] {
+                if(patchCount == 0) {
+                    if (instructionList[i].opcode == OpCodes.Callvirt && (MethodInfo)instructionList[i].operand == methodInfo_IsMelee) {
+                        Label label1 = generator.DefineLabel();
+                        instructionList.InsertRange(i + 2, new CodeInstruction[] {
                         new CodeInstruction(OpCodes.Ldarg_1),
-                        new CodeInstruction(OpCodes.Call,AccessTools.Method(typeof(Patch_JobGiver_AIFightEnemy),nameof(GetJunpPack))),
+                        new CodeInstruction(OpCodes.Call,AccessTools.Method(typeof(Patch_JobGiver_AIFightEnemy),nameof(GetJunpPackMelee))),
                         new CodeInstruction(OpCodes.Dup),
-                        new CodeInstruction(OpCodes.Brfalse_S,label),
+                        new CodeInstruction(OpCodes.Brfalse_S,label1),
                         new CodeInstruction(OpCodes.Ret),
                         new CodeInstruction(OpCodes.Pop)
                     });
-                    instructionList[i + 7].labels.Add(label);
+                        instructionList[i + 7].labels.Add(label1);
+                        patchCount++;
+                        i += 7;
+                    }
+                    continue;
+                }
+                
+                if (instructionList[i].opcode == OpCodes.Callvirt && (MethodInfo)instructionList[i].operand == methodInfo_ShootPos) {
+                    Label label2 = generator.DefineLabel();
+                    CodeInstruction popCode = new CodeInstruction(OpCodes.Pop);
+                    popCode.labels.Add(label2);
+                    instructionList.InsertRange(i -4, new CodeInstruction[] {
+                        new CodeInstruction(OpCodes.Ldarg_1),
+                        new CodeInstruction(OpCodes.Call,AccessTools.Method(typeof(Patch_JobGiver_AIFightEnemy),nameof(GetJunpPackRanged))),
+                        new CodeInstruction(OpCodes.Dup),
+                        new CodeInstruction(OpCodes.Brfalse_S,label2),
+                        new CodeInstruction(OpCodes.Ret),
+                        popCode
+                    });
                     patchCount++;
                     break;
                 }
@@ -66,7 +87,7 @@ namespace JumppackForMeleeAI {
             return instructionList;
         }
 
-        public static Job GetJunpPack(Pawn pawn) {
+        public static Job GetJunpPackMelee(Pawn pawn) {
             if (!pawn.RaceProps.Humanlike || pawn.IsColonist) {
                 return null;
             }
@@ -119,6 +140,44 @@ namespace JumppackForMeleeAI {
             }
 #endif
             Job job = JobMaker.MakeJob(JumpJobDefOf.CastJumpOnce, targetPawn);
+            job.verbToUse = jumpVerb;
+            return job;
+        }
+        public static Job GetJunpPackRanged(Pawn pawn) {
+            if (!pawn.RaceProps.Humanlike || pawn.IsColonist) {
+                return null;
+            }
+
+            Thing targetPawn = pawn.mindState.enemyTarget;
+
+            var covers = CoverUtility.CalculateCoverGiverSet(targetPawn, pawn.Position, pawn.Map);
+            if (covers.NullOrEmpty() || covers.All(t => t.BlockChance < 0.3f)) {
+#if DEBUG
+                if (DebugSettings.godMode) {
+                    MoteMaker.ThrowText(pawn.DrawPosHeld ?? pawn.PositionHeld.ToVector3Shifted(), pawn.MapHeld,
+                        "[jumppack]no covers, not required");
+                }
+#endif
+            }
+
+            IntVec3 opposide = targetPawn.Position + pawn.Rotation.FacingCell * 3;
+            Verb jumpVerb = TryGetJumpVerb(pawn, opposide);
+            if (jumpVerb == null) {
+#if DEBUG
+                if (DebugSettings.godMode) {
+                    MoteMaker.ThrowText(pawn.DrawPosHeld ?? pawn.PositionHeld.ToVector3Shifted(), pawn.MapHeld,
+                        "[jumppack]no jump verb");
+                }
+#endif
+                return null;
+            }
+#if DEBUG
+            if (DebugSettings.godMode) {
+                MoteMaker.ThrowText(pawn.DrawPosHeld ?? pawn.PositionHeld.ToVector3Shifted(), pawn.MapHeld,
+                        "[jumppack]distance: " + (float)(pawn.Position - targetPawn.Position).LengthHorizontalSquared);
+            }
+#endif
+            Job job = JobMaker.MakeJob(JumpJobDefOf.CastJumpOnce, opposide);
             job.verbToUse = jumpVerb;
             return job;
         }
