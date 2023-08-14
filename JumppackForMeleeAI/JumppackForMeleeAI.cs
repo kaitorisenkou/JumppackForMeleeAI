@@ -50,39 +50,40 @@ namespace JumppackForMeleeAI {
             MethodInfo methodInfo_ShootPos = AccessTools.Method(typeof(JobGiver_AIFightEnemy), "TryFindShootingPosition");
             MethodInfo methodInfo_Makejob = AccessTools.Method(typeof(JobMaker), nameof(JobMaker.MakeJob));
             for (int i = 0; i < instructionList.Count; i++) {
-                if(patchCount == 0) {
-                    if (instructionList[i].opcode == OpCodes.Callvirt && (MethodInfo)instructionList[i].operand == methodInfo_IsMelee) {
+                if (patchCount == 0) {
+                    if (instructionList[i].opcode == OpCodes.Callvirt &&
+                        (MethodInfo)instructionList[i].operand == methodInfo_IsMelee) {
                         Label label1 = generator.DefineLabel();
+                        CodeInstruction popCode1 = new CodeInstruction(OpCodes.Pop);
+                        popCode1.labels.Add(label1);
                         instructionList.InsertRange(i + 2, new CodeInstruction[] {
-                        new CodeInstruction(OpCodes.Ldarg_1),
-                        new CodeInstruction(OpCodes.Call,AccessTools.Method(typeof(Patch_JobGiver_AIFightEnemy),nameof(GetJunpPackMelee))),
-                        new CodeInstruction(OpCodes.Dup),
-                        new CodeInstruction(OpCodes.Brfalse_S,label1),
-                        new CodeInstruction(OpCodes.Ret),
-                        new CodeInstruction(OpCodes.Pop)
-                    });
-                        instructionList[i + 7].labels.Add(label1);
+                            new CodeInstruction(OpCodes.Ldarg_1),//2
+                            new CodeInstruction(OpCodes.Call,AccessTools.Method(typeof(Patch_JobGiver_AIFightEnemy),nameof(GetJunpPackMelee))),//3
+                            new CodeInstruction(OpCodes.Dup),//4
+                            new CodeInstruction(OpCodes.Brfalse_S,label1),//5
+                            new CodeInstruction(OpCodes.Ret),//6
+                            popCode1//7
+                        });
                         patchCount++;
-                        i += 7;
+                        i += 13;
+                        Label label2 = generator.DefineLabel();
+                        CodeInstruction popCode = new CodeInstruction(OpCodes.Pop);
+                        popCode.labels.Add(label2);
+                        instructionList.InsertRange(i, new CodeInstruction[] {
+                            new CodeInstruction(OpCodes.Call,AccessTools.Method(typeof(Patch_JobGiver_AIFightEnemy),nameof(GetJunpPackRanged))),
+                            new CodeInstruction(OpCodes.Dup),
+                            new CodeInstruction(OpCodes.Brfalse_S,label2),
+                            new CodeInstruction(OpCodes.Ret),
+                            popCode,
+                            new CodeInstruction(OpCodes.Ldarg_1)
+                        });
+                        patchCount++;
+                        break;
                     }
-                    continue;
                 }
-                
-                if (instructionList[i].opcode == OpCodes.Callvirt && (MethodInfo)instructionList[i].operand == methodInfo_ShootPos) {
-                    Label label2 = generator.DefineLabel();
-                    CodeInstruction popCode = new CodeInstruction(OpCodes.Pop);
-                    popCode.labels.Add(label2);
-                    instructionList.InsertRange(i -4, new CodeInstruction[] {
-                        new CodeInstruction(OpCodes.Ldarg_1),
-                        new CodeInstruction(OpCodes.Call,AccessTools.Method(typeof(Patch_JobGiver_AIFightEnemy),nameof(GetJunpPackRanged))),
-                        new CodeInstruction(OpCodes.Dup),
-                        new CodeInstruction(OpCodes.Brfalse_S,label2),
-                        new CodeInstruction(OpCodes.Ret),
-                        popCode
-                    });
-                    patchCount++;
-                    break;
-                }
+            }
+            if (patchCount < 2) {
+                Log.Warning("[JumppackForMeleeAI]Patch_JobGiver_AIFightEnemy failed!");
             }
             return instructionList;
         }
@@ -97,7 +98,7 @@ namespace JumppackForMeleeAI {
 #if DEBUG
                 if (DebugSettings.godMode) {
                     MoteMaker.ThrowText(pawn.DrawPosHeld ?? pawn.PositionHeld.ToVector3Shifted(), pawn.MapHeld,
-                        "[jumppack]reached, not required");
+                        "[jumppack-melee]reached, not required");
                 }
 #endif
                 return null;
@@ -107,7 +108,7 @@ namespace JumppackForMeleeAI {
 #if DEBUG
                 if (DebugSettings.godMode) {
                     MoteMaker.ThrowText(pawn.DrawPosHeld ?? pawn.PositionHeld.ToVector3Shifted(), pawn.MapHeld,
-                        "[jumppack]too close (distance:" + (float)(pawn.Position - targetPawn.Position).LengthHorizontalSquared + ")");
+                        "[jumppack-melee]too close (distance:" + (float)(pawn.Position - targetPawn.Position).LengthHorizontalSquared + ")");
                 }
 #endif
                 return null;
@@ -117,7 +118,7 @@ namespace JumppackForMeleeAI {
 #if DEBUG
                 if (DebugSettings.godMode) {
                     MoteMaker.ThrowText(pawn.DrawPosHeld ?? pawn.PositionHeld.ToVector3Shifted(), pawn.MapHeld,
-                        "[jumppack]target is moving");
+                        "[jumppack-melee]target is moving");
                 }
 #endif
                 return null;
@@ -128,7 +129,7 @@ namespace JumppackForMeleeAI {
 #if DEBUG
                 if (DebugSettings.godMode) {
                     MoteMaker.ThrowText(pawn.DrawPosHeld ?? pawn.PositionHeld.ToVector3Shifted(), pawn.MapHeld,
-                        "[jumppack]no jump verb");
+                        "[jumppack-melee]no jump verb");
                 }
 #endif
                 return null;
@@ -136,13 +137,15 @@ namespace JumppackForMeleeAI {
 #if DEBUG
             if (DebugSettings.godMode) {
                 MoteMaker.ThrowText(pawn.DrawPosHeld ?? pawn.PositionHeld.ToVector3Shifted(), pawn.MapHeld,
-                        "[jumppack]distance: " + (float)(pawn.Position - targetPawn.Position).LengthHorizontalSquared);
+                        "[jumppack-melee]distance: " + (float)(pawn.Position - targetPawn.Position).LengthHorizontalSquared);
             }
 #endif
             Job job = JobMaker.MakeJob(JumpJobDefOf.CastJumpOnce, targetPawn);
             job.verbToUse = jumpVerb;
             return job;
         }
+
+
         public static Job GetJunpPackRanged(Pawn pawn) {
             if (!pawn.RaceProps.Humanlike || pawn.IsColonist) {
                 return null;
@@ -155,9 +158,10 @@ namespace JumppackForMeleeAI {
 #if DEBUG
                 if (DebugSettings.godMode) {
                     MoteMaker.ThrowText(pawn.DrawPosHeld ?? pawn.PositionHeld.ToVector3Shifted(), pawn.MapHeld,
-                        "[jumppack]no covers, not required");
+                        "[jumppack-ranged]no covers, not required");
                 }
 #endif
+                return null;
             }
 
             IntVec3 opposide = targetPawn.Position + pawn.Rotation.FacingCell * 3;
@@ -166,7 +170,7 @@ namespace JumppackForMeleeAI {
 #if DEBUG
                 if (DebugSettings.godMode) {
                     MoteMaker.ThrowText(pawn.DrawPosHeld ?? pawn.PositionHeld.ToVector3Shifted(), pawn.MapHeld,
-                        "[jumppack]no jump verb");
+                        "[jumppack-ranged]no jump verb");
                 }
 #endif
                 return null;
@@ -174,7 +178,7 @@ namespace JumppackForMeleeAI {
 #if DEBUG
             if (DebugSettings.godMode) {
                 MoteMaker.ThrowText(pawn.DrawPosHeld ?? pawn.PositionHeld.ToVector3Shifted(), pawn.MapHeld,
-                        "[jumppack]distance: " + (float)(pawn.Position - targetPawn.Position).LengthHorizontalSquared);
+                        "[jumppack-ranged]distance: " + (float)(pawn.Position - targetPawn.Position).LengthHorizontalSquared);
             }
 #endif
             Job job = JobMaker.MakeJob(JumpJobDefOf.CastJumpOnce, opposide);
