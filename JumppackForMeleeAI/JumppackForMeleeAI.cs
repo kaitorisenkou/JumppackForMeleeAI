@@ -165,8 +165,21 @@ namespace JumppackForMeleeAI {
             }
 
             IntVec3 opposide = targetPawn.Position + pawn.Rotation.FacingCell * 3;
-            Verb jumpVerb = TryGetJumpVerb(pawn, opposide);
-            if (jumpVerb == null) {
+            Verb jumpVerbOpposide = TryGetJumpVerb(pawn, opposide);
+            if (jumpVerbOpposide != null) {
+#if DEBUG
+            if (DebugSettings.godMode) {
+                MoteMaker.ThrowText(pawn.DrawPosHeld ?? pawn.PositionHeld.ToVector3Shifted(), pawn.MapHeld,
+                        "[jumppack-ranged]distance: " + (float)(pawn.Position - targetPawn.Position).LengthHorizontalSquared);
+            }
+#endif
+                Job jobOpposide = JobMaker.MakeJob(JumpJobDefOf.CastJumpOnce, opposide);
+                jobOpposide.verbToUse = jumpVerbOpposide;
+                return jobOpposide;
+            }
+            IntVec3 coverFront = targetPawn.Position - pawn.Rotation.FacingCell;
+            Verb jumpVerbCoverFront = TryGetJumpVerb(pawn, coverFront);
+            if (jumpVerbCoverFront==null) {
 #if DEBUG
                 if (DebugSettings.godMode) {
                     MoteMaker.ThrowText(pawn.DrawPosHeld ?? pawn.PositionHeld.ToVector3Shifted(), pawn.MapHeld,
@@ -175,15 +188,9 @@ namespace JumppackForMeleeAI {
 #endif
                 return null;
             }
-#if DEBUG
-            if (DebugSettings.godMode) {
-                MoteMaker.ThrowText(pawn.DrawPosHeld ?? pawn.PositionHeld.ToVector3Shifted(), pawn.MapHeld,
-                        "[jumppack-ranged]distance: " + (float)(pawn.Position - targetPawn.Position).LengthHorizontalSquared);
-            }
-#endif
-            Job job = JobMaker.MakeJob(JumpJobDefOf.CastJumpOnce, opposide);
-            job.verbToUse = jumpVerb;
-            return job;
+            Job jobCoverFront = JobMaker.MakeJob(JumpJobDefOf.CastJumpOnce, coverFront);
+            jobCoverFront.verbToUse = jumpVerbCoverFront;
+            return jobCoverFront;
         }
 
         static public Verb TryGetJumpVerb(Pawn pawn, LocalTargetInfo target) {
